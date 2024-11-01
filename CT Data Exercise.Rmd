@@ -1,0 +1,182 @@
+---
+title: "CTData Exercise"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# Set global options to hide messages/warnings but show code and output
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+# Load packages
+```{r}
+library(tidyverse)  # Loads the tidyverse collection of packages for data manipulation and visualization
+library(psych)      # Loads the psych package for descriptive statistics and data analysis
+```
+# Read in Data
+```{r}
+data <- read.csv("CTData_Research-Analyst_Technical-Exercise_DATA.csv")
+```
+
+# Data Processing Steps & Analyses
+## Descriptive analyses
+```{r}
+describe(data)  # Provides descriptive statistics for all variables in the dataset
+unique(data$SMI)  # Lists unique values in the SMI column
+```
+
+# What percentage of respondents were currently using non-parental care for any child at the time of the survey? Include the sample size for your analysis.
+```{r}
+# Counting the number of "1" responses for each variable for using non-parental care
+data$yes_count <- rowSums(data[, c("CT.POLICY.002.a", "CT.POLICY.003.a", "CT.POLICY.004.a", 
+                                   "CT.POLICY.005.a", "CT.POLICY.006.a")] == 1, na.rm = TRUE)
+
+# Calculate the number of "yes" responses for ct.policy.001
+total_yes_ct_policy_001 <- sum(data$CT.POLICY.001 == 1, na.rm = TRUE)
+
+# Calculate the number of respondents using non-parental care for any child 
+using_non_parental_care <- ifelse(data$yes_count > 0, 1, 0)
+
+n_using_non_parental_care <- sum(using_non_parental_care, na.rm = TRUE)
+
+# Calculate the percentage of respondents using non-parental care (denominator is total_yes_ct_policy_001)
+percentage_using_non_parental_care <- (n_using_non_parental_care / total_yes_ct_policy_001) * 100
+
+# Output the percentage and sample size (total_yes_ct_policy_001)
+cat("Percentage of respondents using non-parental care: ", percentage_using_non_parental_care, "%\n")
+cat("Total number of respondents using non-parental care for any child: ", n_using_non_parental_care)
+cat("Total number of respondents", total_yes_ct_policy_001)
+```
+
+# What percentage of young children were currently receiving non-parental care at the time of the survey? Include the sample size for your analysis. 
+```{r}
+# Count the number of children under 6 years old reported by respondents
+total_children_under_6 <- sum(data$CT.DEMO.005, na.rm = TRUE)
+
+# Count the number of children receiving non-parental care
+# This sums "yes" responses (1) for all applicable children
+children_receiving_care <- sum(
+  rowSums(data[, c("CT.POLICY.002.a", "CT.POLICY.003.a", "CT.POLICY.004.a", 
+                   "CT.POLICY.005.a", "CT.POLICY.006.a")] == 1, na.rm = TRUE)
+)
+
+# Calculate the percentage of young children receiving non-parental care
+percentage_receiving_care <- (children_receiving_care / total_children_under_6) * 100
+
+# Output the percentage and sample size
+cat("Percentage of young children receiving non-parental care: ", percentage_receiving_care, "%\n")
+cat("Total number of children receiving non-parental care: ", children_receiving_care, "\n")
+cat("Total number of children under 6 years old: ", total_children_under_6, "\n")
+```
+# What percentage of respondents within each household income category (relative to state median income) were currently using non-parental care for any child? Please include the sample size for your analysis and a data visualization.
+```{r}
+# Convert blank strings to NA in the SMI column
+data$SMI <- na_if(data$SMI, "")
+
+# Create a new column for using_non_parental_care
+data$using_non_parental_care <- ifelse(data$yes_count > 0, 1, 0)
+
+# Group data by SMI and calculate the necessary values
+income_analysis <- data %>%
+  group_by(SMI) %>%
+  summarise(
+    total_respondents = sum(CT.POLICY.001 == 1, na.rm = TRUE),
+    n_using_non_parental_care = sum(using_non_parental_care == 1, na.rm = TRUE),
+    percentage_using_non_parental_care = (n_using_non_parental_care / total_respondents) * 100,
+    .groups = "drop"  # Drop grouping after summarizing
+  ) %>%
+  filter(!is.na(SMI))  # Exclude NA groups
+
+print(income_analysis)
+
+# Calculate the totals
+total_row <- data.frame(
+  SMI = "Total",
+  total_respondents = sum(income_analysis$total_respondents, na.rm = TRUE),
+  n_using_non_parental_care = sum(income_analysis$n_using_non_parental_care, na.rm = TRUE),
+  percentage_using_non_parental_care = (sum(income_analysis$n_using_non_parental_care, na.rm = TRUE) / 
+                                          sum(income_analysis$total_respondents, na.rm = TRUE)) * 100
+)
+
+# Combine the summary and total row
+income_analysis <- bind_rows(income_analysis, total_row)
+
+# Print the updated income analysis table
+print(income_analysis)
+```
+
+## Create graph
+```{r}
+# Create a bar plot for visualization excluding the total row
+visualization_data <- income_analysis %>% filter(SMI != "Total")  # Exclude the total row
+
+# Define the order of SMI categories
+visualization_data$SMI <- factor(visualization_data$SMI, 
+                                  levels = c("Below 30% of SMI", 
+                                             "Between 30-60% of SMI", 
+                                             "Between 60-85% of SMI", 
+                                             "Above 85% of SMI"))
+
+ggplot(visualization_data, aes(x = SMI, y = percentage_using_non_parental_care)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  # Format y-axis as percentage
+  labs(
+    title = "Percentage of Respondents Using Non-Parental Care by Income Category",
+    x = "Income Category (Relative to State Median Income)",
+    y = "Percentage Using Non-Parental Care"
+  ) +
+  geom_text(aes(label = paste0(round(percentage_using_non_parental_care, 1), "%")), 
+            vjust = -0.5, size = 3) +  # Add percentage labels on the bars
+  theme_minimal()
+```
+
+# Is the variation among household income groups in the likelihood of using nonparental care for any child statistically significant? Report the test(s) you used, the value(s) of the test statistic(s), the degrees of freedom, and the p-value(s). Describe this result and what it means in language that is accessible to a general audience. 
+
+## Data cleaning
+```{r}
+# Check unique values in the SMI column after trimming whitespace
+unique_values <- unique(trimws(data$SMI))
+print(unique_values)
+
+# Clean the SMI values and filter out NA or blank entries
+cleaned_data <- data %>%
+  filter(!is.na(SMI) & trimws(SMI) != "")
+
+# Check for any non-standard entries in the cleaned dataset
+unique_cleaned_values <- unique(trimws(cleaned_data$SMI))
+print(unique_cleaned_values)
+
+# Check for non-visible characters
+cleaned_data <- cleaned_data %>%
+  filter(SMI != " " & SMI != "")  # Filter out spaces and empty strings
+
+# Double-check unique values again
+unique_cleaned_values <- unique(trimws(cleaned_data$SMI))
+print(unique_cleaned_values)
+
+cleaned_data$SMI <- as.factor(cleaned_data$SMI)
+cleaned_data$using_non_parental_care <- as.factor(cleaned_data$using_non_parental_care)
+```
+
+## Statistical analysis
+```{r}
+# Create a contingency table for the number of respondents using non-parental care
+contingency_table <- table(cleaned_data$SMI, cleaned_data$using_non_parental_care)
+print(contingency_table)
+
+# Perform the Chi-Square test
+chi_square_test <- chisq.test(contingency_table)
+
+# Extracting the results
+chi_square_statistic <- chi_square_test$statistic
+degrees_of_freedom <- chi_square_test$parameter
+p_value <- chi_square_test$p.value
+
+# Print the results
+cat("Chi-Square Statistic:", chi_square_statistic, "\n")
+cat("Degrees of Freedom:", degrees_of_freedom, "\n")
+cat("P-Value:", p_value, "\n")
+```
