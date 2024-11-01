@@ -1,0 +1,1 @@
+# CTData-Research-Analyst-Technical-Exercise
